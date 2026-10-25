@@ -11,6 +11,7 @@ if (!env.DATABASE_URL) {
 
 console.log("[Database] DATABASE_URL is configured")
 
-const client = postgres(env.DATABASE_URL)
+// prepare: false — Supabase transaction pooler does not support prepared statements
+const client = postgres(env.DATABASE_URL, { prepare: false })
 
 export const db = drizzle(client, { schema })

@@ -1,10 +1,11 @@
 import { createClient } from "@openauthjs/openauth/client"
+import { env } from "$env/dynamic/private"
 import type { RequestEvent } from "@sveltejs/kit"
 
 export function createAuthClient(event: RequestEvent) {
   return createClient({
     clientID: "yopem-qr",
-    issuer: "https://auth.yopem.com",
+    issuer: env.AUTH_ISSUER || "https://auth.yopem.com",
     fetch: event.fetch,
   })
 }

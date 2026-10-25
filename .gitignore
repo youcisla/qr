@@ -28,3 +28,7 @@ openspec/
 opencode.json
 opencode.jsonc
 AGENTS.md
+
+# Local agent tooling
+.remember
+.claude-flow
