@@ -16,7 +16,7 @@ export function postgresStorage(): StorageAdapter {
     async set(key, value, expiry) {
       await db.execute(sql`
         insert into auth_storage (key, value, expires_at)
-        values (${joinKey(key)}, ${JSON.stringify(value)}::jsonb, ${expiry ?? null})
+        values (${joinKey(key)}, ${JSON.stringify(value)}::jsonb, ${expiry ? expiry.toISOString() : null}::timestamptz)
         on conflict (key) do update set value = excluded.value, expires_at = excluded.expires_at
       `)
     },
