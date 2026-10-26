@@ -1,25 +1,40 @@
 import { redirect } from "@sveltejs/kit"
-import { db } from "$lib/server/db"
-import { qrCodesTable } from "$lib/server/db/schema"
-import { eq } from "drizzle-orm"
+import { getUserOverview } from "$lib/server/analytics/stats"
+import { getPublicOrigin, listQrCodesForUser } from "$lib/server/qr/service"
 
 import type { PageServerLoad } from "./$types"
+
+/** Upper bound for the client-side manager; the API can page beyond this later. */
+const MAX_DASHBOARD_CODES = 500
 
 export const load: PageServerLoad = async (event) => {
   if (!event.locals.session) {
     redirect(303, "/auth/login")
   }
 
-  const qrCodes = await db.query.qrCodesTable.findMany({
-    where: eq(qrCodesTable.userId, event.locals.session.id),
-    orderBy: (qrCodes, { desc }) => [desc(qrCodes.createdAt)],
-  })
+  const userId = event.locals.session.id
+  const [overview, list] = await Promise.all([
+    getUserOverview(userId),
+    listQrCodesForUser(userId, {
+      limit: MAX_DASHBOARD_CODES,
+      sort: "created",
+      direction: "desc",
+    }),
+  ])
+
+  const tags = [...new Set(list.items.flatMap((qrCode) => qrCode.tags))].sort((a, b) =>
+    a.localeCompare(b),
+  )
 
   return {
-    title: "My QR Codes",
-    description: "View and manage your QR codes",
-    keywords: "qr codes, dashboard",
+    title: "QR code dashboard",
+    description: "Manage your QR codes, track scans and open per-code analytics.",
+    keywords: "qr codes, dashboard, qr analytics",
     user: event.locals.session,
-    qrCodes,
+    origin: getPublicOrigin(event.url),
+    qrCodes: list.items,
+    totalCodes: list.total,
+    overview,
+    tags,
   }
 }

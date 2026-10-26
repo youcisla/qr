@@ -67,6 +67,12 @@
         >
           Home
         </a>
+        <a
+          href="/studio"
+          class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Studio
+        </a>
         {#if user}
           <a
             href="/dashboard"

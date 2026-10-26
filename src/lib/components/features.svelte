@@ -1,74 +1,96 @@
 <script lang="ts">
-  import BarChartIcon from "@lucide/svelte/icons/bar-chart"
+  import ChartBarIcon from "@lucide/svelte/icons/chart-bar"
   import DownloadIcon from "@lucide/svelte/icons/download"
+  import LayersIcon from "@lucide/svelte/icons/layers"
   import LinkIcon from "@lucide/svelte/icons/link"
   import PaletteIcon from "@lucide/svelte/icons/palette"
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
+  import ScanLineIcon from "@lucide/svelte/icons/scan-line"
   import ShieldCheckIcon from "@lucide/svelte/icons/shield-check"
   import { Card, CardDescription, CardHeader, CardTitle } from "$lib/components/ui/card"
 
   const features = [
     {
-      icon: RefreshCwIcon,
-      title: "Dynamic QR Codes",
-      description:
-        "Update your QR destination anytime without reprinting. Perfect for marketing campaigns.",
-    },
-    {
-      icon: BarChartIcon,
-      title: "Track Analytics",
-      description: "See how many people scan your QR codes and when. Make data-driven decisions.",
-    },
-    {
       icon: PaletteIcon,
-      title: "Custom Branding",
+      title: "Full design control",
       description:
-        "Match your brand colors and style. Stand out with professional-looking QR codes.",
+        "10 module shapes, 6 eye frames, 5 eye balls, linear and radial gradients, transparent backgrounds, logo embedding and framed print cards.",
     },
     {
-      icon: LinkIcon,
-      title: "Multiple URL Formats",
+      icon: LayersIcon,
+      title: "16 content types",
       description:
-        "Support for URLs, emails (mailto:), phone calls (tel:), SMS, WiFi networks, and more. Create QR codes for any purpose.",
+        "Links, text, email, phone, SMS, WhatsApp, WiFi, vCard, MeCard, location, events, crypto, SEPA payments, app stores, social profiles and PayPal.",
+    },
+    {
+      icon: RefreshCwIcon,
+      title: "Dynamic QR codes",
+      description:
+        "Edit the destination after printing, pause or expire a code, protect it with a password, and organise everything with tags.",
+    },
+    {
+      icon: ChartBarIcon,
+      title: "Scan analytics",
+      description:
+        "Total and unique scans, time series, countries, cities, devices, browsers, operating systems, referrers and hour-of-day heatmaps.",
     },
     {
       icon: DownloadIcon,
-      title: "High Quality Export",
-      description: "Download in PNG format at high resolution. Ready for print or digital use.",
+      title: "Print-ready exports",
+      description:
+        "SVG for vector workflows, PNG at any resolution with transparency, and single-page PDF for print shops. Copy the SVG straight into a design tool.",
+    },
+    {
+      icon: ScanLineIcon,
+      title: "Smart scanner",
+      description:
+        "Scan with your camera or an image, and get a structured result card for WiFi, contacts, emails, events and links — with no data leaving your browser.",
+    },
+    {
+      icon: LinkIcon,
+      title: "Short links & bulk tools",
+      description:
+        "Every dynamic code gets a short URL. Search, filter, tag, duplicate, archive and bulk-export your whole collection as CSV.",
     },
     {
       icon: ShieldCheckIcon,
-      title: "Secure & Reliable",
-      description: "Your QR codes work forever. No expiration dates or hidden fees.",
+      title: "Open source and durable",
+      description:
+        "Static QR codes never expire and keep working forever. Dynamic codes are yours to edit, pause or delete at any time.",
     },
-  ]
+  ] satisfies Array<{
+    icon: typeof PaletteIcon
+    title: string
+    description: string
+  }>
 </script>
 
-<section class="w-full rounded-2xl bg-linear-to-b from-background to-muted/30 py-16 md:py-24">
-  <div class="container mx-auto max-w-7xl px-4">
-    <div class="mb-12 text-center">
-      <p class="mx-auto max-w-2xl text-xl font-semibold">
-        Create QR codes or scan any QR to reveal its URL instantly
-      </p>
-      <p class="mx-auto max-w-2xl text-xl font-semibold">
-        Track performance, update destinations, customize designs in one place
-      </p>
-    </div>
+<section id="features" class="mx-auto max-w-7xl px-4 py-16 md:py-24">
+  <div class="mx-auto mb-12 max-w-2xl text-center">
+    <p class="text-sm font-semibold tracking-[0.2em] text-primary uppercase">Everything included</p>
+    <h2 class="mt-2 text-3xl font-bold tracking-tight md:text-4xl">
+      A QR platform that grows with your campaign
+    </h2>
+    <p class="mt-3 text-muted-foreground">
+      Design, content, tracking and management in one place — no paywalled "pro" watermark, no
+      expiring codes.
+    </p>
+  </div>
 
-    <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-      {#each features as feature (feature.title)}
-        <Card class="transition-all hover:-translate-y-1 hover:shadow-lg">
-          <CardHeader>
-            <div
-              class="flex h-14 w-14 items-center justify-center rounded-lg bg-primary/10 text-primary"
-            >
-              <svelte:component this={feature.icon} class="h-7 w-7" />
-            </div>
-            <CardTitle class="text-xl">{feature.title}</CardTitle>
-            <CardDescription class="text-base">{feature.description}</CardDescription>
-          </CardHeader>
-        </Card>
-      {/each}
-    </div>
+  <div class="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+    {#each features as feature (feature.title)}
+      {@const Icon = feature.icon}
+      <Card class="h-full gap-4 transition-all hover:-translate-y-1 hover:shadow-lg">
+        <CardHeader class="gap-3">
+          <div
+            class="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary"
+          >
+            <Icon class="size-6" />
+          </div>
+          <CardTitle class="text-lg">{feature.title}</CardTitle>
+          <CardDescription class="text-sm leading-relaxed">{feature.description}</CardDescription>
+        </CardHeader>
+      </Card>
+    {/each}
   </div>
 </section>

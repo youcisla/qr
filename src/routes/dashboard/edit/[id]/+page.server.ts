@@ -1,114 +1,133 @@
-import { error, redirect } from "@sveltejs/kit"
-import { db } from "$lib/server/db"
-import { qrCodesTable, qrStylesTable } from "$lib/server/db/schema"
-import { eq } from "drizzle-orm"
+import { error, fail, redirect } from "@sveltejs/kit"
+import { MIN_PASSWORD_LENGTH } from "$lib/server/qr/password"
+import {
+  getPublicOrigin,
+  getQrCodeForUser,
+  QrServiceError,
+  updateQrCode,
+} from "$lib/server/qr/service"
 import { z } from "zod"
 
 import type { Actions, PageServerLoad } from "./$types"
 
-const updateQrSchema = z.object({
-  id: z.string(),
-  destinationUrl: z.string().optional(),
-  description: z.string().optional(),
-  foregroundColor: z
-    .string()
-    .regex(/^#[0-9A-Fa-f]{6}$/)
-    .optional(),
-  backgroundColor: z
-    .string()
-    .regex(/^#[0-9A-Fa-f]{6}$/)
-    .optional(),
+const saveSchema = z.object({
+  title: z.string().trim().max(100).optional(),
+  description: z.string().trim().max(500).optional(),
+  destinationUrl: z.string().trim().max(2048).optional(),
+  status: z.enum(["active", "paused", "archived"]),
+  expiresAt: z.string().trim().optional(),
+  tags: z.string().trim().optional(),
+  passwordAction: z.enum(["keep", "set", "clear"]).default("keep"),
+  password: z.string().optional(),
 })
+
+/** Format a Date as the local value expected by <input type="datetime-local">. */
+function toLocalInputValue(value: Date | null): string {
+  if (!value) return ""
+  const pad = (part: number) => String(part).padStart(2, "0")
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(
+    value.getHours(),
+  )}:${pad(value.getMinutes())}`
+}
+
+function toRedirectTarget(caught: unknown): never {
+  if (caught instanceof QrServiceError) {
+    error(caught.status as 404 | 403, caught.message)
+  }
+  throw caught
+}
 
 export const load: PageServerLoad = async (event) => {
   if (!event.locals.session) {
     redirect(303, "/auth/login")
   }
 
-  const { id } = event.params
-
-  if (!id) {
-    error(404, "QR code not found")
+  let qrCode
+  try {
+    qrCode = await getQrCodeForUser(event.params.id, event.locals.session.id)
+  } catch (caught) {
+    toRedirectTarget(caught)
   }
 
-  const qrCode = await db.query.qrCodesTable.findFirst({
-    where: eq(qrCodesTable.id, id),
-  })
-
-  if (!qrCode) {
-    error(404, "QR code not found")
-  }
-
-  if (qrCode.userId !== event.locals.session.id) {
-    error(403, "Unauthorized")
-  }
-
-  const style = await db.query.qrStylesTable.findFirst({
-    where: eq(qrStylesTable.qrCodeId, id),
-  })
+  const { passwordHash, ...safeQrCode } = qrCode
 
   return {
-    title: "Edit QR Code",
-    description: "Edit your QR code",
-    keywords: "qr code, edit",
+    title: `Edit ${safeQrCode.title ?? "QR code"}`,
+    description: "Edit QR code details, status, expiry, tags and password protection.",
+    keywords: "qr code, edit, manage",
     user: event.locals.session,
-    qrCode: { ...qrCode, style },
+    origin: getPublicOrigin(event.url),
+    qrCode: safeQrCode,
+    design: safeQrCode.design,
+    hasPassword: Boolean(passwordHash),
+    expiresAtLocal: toLocalInputValue(safeQrCode.expiresAt),
   }
 }
 
 export const actions: Actions = {
-  updateQrCode: async ({ request, locals, params }) => {
+  save: async ({ request, locals, params }) => {
     if (!locals.session) {
-      error(401, "Authentication required")
+      return fail(401, { error: "Authentication required" })
     }
 
     const formData = await request.formData()
-    const data = updateQrSchema.parse({
-      id: params.id,
-      destinationUrl: formData.get("destinationUrl") || undefined,
-      description: formData.get("description") || undefined,
-      foregroundColor: formData.get("foregroundColor") || undefined,
-      backgroundColor: formData.get("backgroundColor") || undefined,
+    const parsed = saveSchema.safeParse({
+      title: formData.get("title") ?? undefined,
+      description: formData.get("description") ?? undefined,
+      destinationUrl: formData.get("destinationUrl") ?? undefined,
+      status: formData.get("status") ?? undefined,
+      expiresAt: formData.get("expiresAt") ?? undefined,
+      tags: formData.get("tags") ?? undefined,
+      passwordAction: formData.get("passwordAction") ?? "keep",
+      password: formData.get("password") ?? undefined,
     })
 
-    const qrCode = await db.query.qrCodesTable.findFirst({
-      where: eq(qrCodesTable.id, data.id),
-    })
-
-    if (!qrCode) {
-      error(404, "QR code not found")
+    if (!parsed.success) {
+      return fail(400, { error: parsed.error.issues[0]?.message ?? "Invalid form data" })
     }
 
-    if (qrCode.userId !== locals.session.id) {
-      error(403, "Unauthorized")
+    const input = parsed.data
+    const tags = [
+      ...new Set(
+        (input.tags ?? "")
+          .split(",")
+          .map((tag) => tag.trim().replace(/^#/, ""))
+          .filter(Boolean),
+      ),
+    ].slice(0, 20)
+
+    const patch: Parameters<typeof updateQrCode>[2] = {
+      title: input.title || null,
+      description: input.description || null,
+      status: input.status,
+      tags,
+      expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
     }
 
-    if (data.destinationUrl && qrCode.type === "static") {
-      error(400, "Cannot change URL of static QR code")
+    if (input.destinationUrl !== undefined) {
+      patch.destinationUrl = input.destinationUrl || null
     }
-
-    if (data.destinationUrl || data.description) {
-      await db
-        .update(qrCodesTable)
-        .set({
-          destinationUrl: data.destinationUrl,
-          description: data.description,
-          updatedAt: new Date(),
+    if (input.passwordAction === "clear") {
+      patch.password = null
+    } else if (input.passwordAction === "set") {
+      const password = input.password ?? ""
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        return fail(400, {
+          error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
         })
-        .where(eq(qrCodesTable.id, data.id))
+      }
+      patch.password = password
     }
 
-    if (data.foregroundColor || data.backgroundColor) {
-      await db
-        .update(qrStylesTable)
-        .set({
-          foregroundColor: data.foregroundColor,
-          backgroundColor: data.backgroundColor,
-          updatedAt: new Date(),
-        })
-        .where(eq(qrStylesTable.qrCodeId, data.id))
+    try {
+      await updateQrCode(params.id, locals.session.id, patch)
+    } catch (caught) {
+      if (caught instanceof QrServiceError) {
+        return fail(caught.status, { error: caught.message })
+      }
+      throw caught
     }
 
-    return { success: true }
+    return { success: true, message: "QR code updated" }
   },
 }

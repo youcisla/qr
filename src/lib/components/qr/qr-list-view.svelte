@@ -1,172 +1,192 @@
 <script lang="ts">
-  import { Pencil, Trash2 } from "@lucide/svelte"
-  import { Badge } from "$lib/components/ui/badge"
-  import { Button } from "$lib/components/ui/button"
+  import { ArrowDown, ArrowUp, ArrowUpDown } from "@lucide/svelte"
   import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-  } from "$lib/components/ui/dialog"
+    formatNumber,
+    formatScanMoment,
+    qrDisplaySubtitle,
+    qrDisplayTitle,
+    QrPreview,
+    statusBadgeVariant,
+    statusLabel,
+  } from "$lib/components/analytics"
+  import { Badge } from "$lib/components/ui/badge"
+  import { Checkbox } from "$lib/components/ui/checkbox"
   import {
     Table,
     TableBody,
+    TableCaption,
     TableCell,
     TableHead,
     TableHeader,
     TableRow,
   } from "$lib/components/ui/table"
+  import type { QrDesign } from "$lib/qr/types"
   import type { QrCode } from "$lib/server/db/schema/qr-codes"
-  import { generateQrCodeSvg } from "$lib/utils/qr-generator"
-  import { onMount } from "svelte"
 
   import QrActionsPopover from "./qr-actions-popover.svelte"
 
+  type QrListRow = QrCode & { design: QrDesign }
+  type SortKey = "created" | "updated" | "scans" | "title"
+
   interface Props {
-    qrCodes: QrCode[]
-    onEdit?: (id: string) => void
+    rows: QrListRow[]
+    /** Public origin used to render dynamic short links. */
+    origin: string
+    selectedIds: string[]
+    allSelected?: boolean
+    someSelected?: boolean
+    sortKey?: SortKey
+    sortDirection?: "asc" | "desc"
+    onToggle?: (id: string) => void
+    onToggleAll?: () => void
+    onSort?: (key: SortKey) => void
     onDelete?: (id: string) => void
+    onToggleStatus?: (id: string) => void
   }
 
-  let { qrCodes, onEdit, onDelete }: Props = $props()
-
-  let qrSvgCache = $state<Record<string, string>>({})
-
-  onMount(() => {
-    return
-  })
-
-  $effect(() => {
-    qrCodes.forEach((qrCode) => {
-      if (!qrSvgCache[qrCode.id]) {
-        generateQrCodeSvg({
-          url: qrCode.shortCode
-            ? `${window.location.origin}/${qrCode.shortCode}`
-            : qrCode.destinationUrl,
-          size: 64,
-        }).then((svg) => {
-          qrSvgCache[qrCode.id] = svg
-        })
-      }
-    })
-  })
-
-  function formatDate(date: Date | null): string {
-    if (!date) return "N/A"
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }).format(new Date(date))
-  }
-
-  function handleConfirmDelete(qrCode: QrCode) {
-    onDelete?.(qrCode.id)
-  }
+  let {
+    rows,
+    origin,
+    selectedIds,
+    allSelected = false,
+    someSelected = false,
+    sortKey = "created",
+    sortDirection = "desc",
+    onToggle,
+    onToggleAll,
+    onSort,
+    onDelete,
+    onToggleStatus,
+  }: Props = $props()
 </script>
 
-<div class="rounded-md border">
+{#snippet sortHeader(label: string, key: SortKey)}
+  <button
+    type="button"
+    class="inline-flex items-center gap-1 font-medium transition-colors hover:text-foreground"
+    onclick={() => onSort?.(key)}
+  >
+    {label}
+    {#if sortKey === key}
+      {#if sortDirection === "asc"}
+        <ArrowUp class="size-3" aria-hidden="true" />
+      {:else}
+        <ArrowDown class="size-3" aria-hidden="true" />
+      {/if}
+    {:else}
+      <ArrowUpDown class="size-3 text-muted-foreground/60" aria-hidden="true" />
+    {/if}
+  </button>
+{/snippet}
+
+<div class="overflow-x-auto rounded-xl border bg-card">
   <Table>
+    <TableCaption class="sr-only">Your QR codes</TableCaption>
     <TableHeader>
-      <TableRow>
-        <TableHead class="w-24">QR Code</TableHead>
-        <TableHead>URL</TableHead>
+      <TableRow class="hover:bg-transparent">
+        <TableHead class="w-10">
+          <Checkbox
+            checked={allSelected}
+            indeterminate={someSelected && !allSelected}
+            onCheckedChange={() => onToggleAll?.()}
+            aria-label={allSelected ? "Deselect all QR codes" : "Select all QR codes"}
+          />
+        </TableHead>
+        <TableHead class="w-14">
+          <span class="sr-only">Preview</span>
+        </TableHead>
+        <TableHead>{@render sortHeader("Name", "title")}</TableHead>
         <TableHead class="hidden md:table-cell">Type</TableHead>
-        <TableHead class="hidden lg:table-cell">Created</TableHead>
-        <TableHead class="text-right">Scans</TableHead>
-        <TableHead class="hidden xl:table-cell">Last Scanned</TableHead>
-        <TableHead class="w-24 text-right">Actions</TableHead>
+        <TableHead>Status</TableHead>
+        <TableHead class="hidden xl:table-cell">Tags</TableHead>
+        <TableHead class="hidden text-right sm:table-cell">
+          {@render sortHeader("Scans", "scans")}
+        </TableHead>
+        <TableHead class="hidden 2xl:table-cell">
+          {@render sortHeader("Created", "created")}
+        </TableHead>
+        <TableHead class="hidden lg:table-cell">Last scan</TableHead>
+        <TableHead class="w-10 text-right">
+          <span class="sr-only">Actions</span>
+        </TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>
-      {#each qrCodes as qrCode (qrCode.id)}
-        <TableRow>
+      {#each rows as row (row.id)}
+        {@const selected = selectedIds.includes(row.id)}
+        <TableRow data-state={selected ? "selected" : undefined}>
           <TableCell>
-            <div class="flex h-16 w-16 items-center justify-center rounded border bg-white p-2">
-              {#if qrSvgCache[qrCode.id]}
-                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                {@html qrSvgCache[qrCode.id]}
-              {:else}
-                <div class="h-full w-full animate-pulse rounded bg-muted"></div>
-              {/if}
-            </div>
+            <Checkbox
+              checked={selected}
+              onCheckedChange={() => onToggle?.(row.id)}
+              aria-label={selected
+                ? `Deselect ${qrDisplayTitle(row)}`
+                : `Select ${qrDisplayTitle(row)}`}
+            />
           </TableCell>
           <TableCell>
-            <div class="max-w-[300px]">
-              <p class="truncate font-medium">{qrCode.destinationUrl}</p>
-              {#if qrCode.description}
-                <p class="truncate text-sm text-muted-foreground">{qrCode.description}</p>
-              {/if}
-            </div>
+            <QrPreview
+              qr={row}
+              design={row.design}
+              {origin}
+              size={128}
+              class="size-11 bg-white p-1"
+            />
+          </TableCell>
+          <TableCell class="max-w-[320px] whitespace-normal">
+            <a href={`/dashboard/analytics/${row.id}`} class="font-medium hover:underline">
+              {qrDisplayTitle(row)}
+            </a>
+            <p class="line-clamp-1 text-xs text-muted-foreground">
+              {qrDisplaySubtitle(row)}
+            </p>
           </TableCell>
           <TableCell class="hidden md:table-cell">
-            <Badge variant={qrCode.type === "dynamic" ? "default" : "secondary"}>
-              {qrCode.type}
-            </Badge>
+            <Badge variant={row.type === "dynamic" ? "default" : "secondary"}>{row.type}</Badge>
           </TableCell>
-          <TableCell class="hidden text-sm text-muted-foreground lg:table-cell">
-            {formatDate(qrCode.createdAt)}
+          <TableCell>
+            <Badge variant={statusBadgeVariant(row.status)}>{statusLabel(row.status)}</Badge>
           </TableCell>
-          <TableCell class="text-right font-medium">
-            {qrCode.scanCount}
-          </TableCell>
-          <TableCell class="hidden text-sm text-muted-foreground xl:table-cell">
-            {#if qrCode.lastScannedAt}
-              {formatDate(qrCode.lastScannedAt)}
+          <TableCell class="hidden xl:table-cell">
+            {#if row.tags.length === 0}
+              <span class="text-muted-foreground">—</span>
             {:else}
-              <span class="italic">Never</span>
+              <div class="flex items-center gap-1">
+                {#each row.tags.slice(0, 2) as tag (tag)}
+                  <Badge variant="outline">#{tag}</Badge>
+                {/each}
+                {#if row.tags.length > 2}
+                  <span class="text-xs text-muted-foreground">+{row.tags.length - 2}</span>
+                {/if}
+              </div>
             {/if}
           </TableCell>
+          <TableCell class="hidden text-right sm:table-cell">
+            <span class="font-medium tabular-nums">{formatNumber(row.scanCount)}</span>
+            <span class="ml-1 text-xs text-muted-foreground tabular-nums">
+              ({formatNumber(row.uniqueScanCount)})
+            </span>
+          </TableCell>
+          <TableCell class="hidden text-sm text-muted-foreground 2xl:table-cell">
+            {formatScanMoment(row.createdAt)}
+          </TableCell>
+          <TableCell class="hidden text-sm text-muted-foreground lg:table-cell">
+            {formatScanMoment(row.lastScannedAt)}
+          </TableCell>
           <TableCell class="text-right">
-            <div class="flex items-center justify-end gap-1">
-              <QrActionsPopover {qrCode} />
-              {#if qrCode.type === "dynamic"}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-8 w-8"
-                  onclick={() => onEdit?.(qrCode.id)}
-                >
-                  <Pencil class="h-4 w-4" />
-                  <span class="sr-only">Edit</span>
-                </Button>
-              {/if}
-              <Dialog>
-                <DialogTrigger>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    class="h-8 w-8 text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 class="h-4 w-4" />
-                    <span class="sr-only">Delete</span>
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Delete QR Code</DialogTitle>
-                    <DialogDescription>
-                      Are you sure you want to delete this QR code? This action cannot be undone.
-                      {#if qrCode.type === "dynamic"}
-                        The short URL will stop working.
-                      {/if}
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogFooter>
-                    <DialogClose>
-                      <Button variant="outline">Cancel</Button>
-                    </DialogClose>
-                    <Button variant="destructive" onclick={() => handleConfirmDelete(qrCode)}>
-                      Delete
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
+            <QrActionsPopover
+              qrCode={row}
+              design={row.design}
+              {origin}
+              {onDelete}
+              {onToggleStatus}
+            />
+          </TableCell>
+        </TableRow>
+      {:else}
+        <TableRow>
+          <TableCell colspan={10} class="py-10 text-center text-sm text-muted-foreground">
+            No QR codes match the current filters.
           </TableCell>
         </TableRow>
       {/each}

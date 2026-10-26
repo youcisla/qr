@@ -1,40 +1,27 @@
 import { error, json } from "@sveltejs/kit"
-import { db } from "$lib/server/db"
-import { qrCodesTable } from "$lib/server/db/schema"
-import { eq } from "drizzle-orm"
+import { readJsonBody, requireUser, withQrErrors } from "$lib/server/http"
+import { deleteQrCodes } from "$lib/server/qr/service"
 import { z } from "zod"
 
 import type { RequestHandler } from "./$types"
 
 const bulkDeleteSchema = z.object({
-  ids: z.array(z.string()),
+  ids: z.array(z.string().min(1)).min(1).max(500),
 })
 
+/**
+ * POST /api/qr/bulk-delete - legacy bulk delete endpoint kept for backwards
+ * compatibility. Prefer POST /api/qr/bulk with action "delete".
+ */
 export const POST: RequestHandler = async ({ request, locals }) => {
-  if (!locals.session) {
-    error(401, "Authentication required")
+  const user = requireUser(locals)
+  const parsed = bulkDeleteSchema.safeParse(await readJsonBody(request))
+
+  if (!parsed.success) {
+    error(400, parsed.error.issues[0]?.message ?? "Invalid request body")
   }
 
-  const body = await request.json()
-  const { ids } = bulkDeleteSchema.parse(body)
+  const result = await withQrErrors(() => deleteQrCodes(parsed.data.ids, user.id))
 
-  const results = await Promise.allSettled(
-    ids.map(async (id) => {
-      const qrCode = await db.query.qrCodesTable.findFirst({
-        where: eq(qrCodesTable.id, id),
-      })
-
-      if (!qrCode || qrCode.userId !== locals.session?.id) {
-        throw new Error(`Cannot delete QR code: ${id}`)
-      }
-
-      await db.delete(qrCodesTable).where(eq(qrCodesTable.id, id))
-      return id
-    }),
-  )
-
-  const succeeded = results.filter((r) => r.status === "fulfilled").length
-  const failed = results.filter((r) => r.status === "rejected").length
-
-  return json({ succeeded, failed })
+  return json({ succeeded: result.succeeded.length, failed: result.failed.length })
 }

@@ -28,6 +28,7 @@
   })
 
   export type BadgeVariant = VariantProps<typeof badgeVariants>["variant"]
+  export type BadgeSize = VariantProps<typeof badgeVariants>["size"]
 </script>
 
 <script lang="ts">
@@ -39,10 +40,12 @@
     href,
     class: className,
     variant = "default",
+    size = "default",
     children,
     ...restProps
   }: WithElementRef<HTMLAnchorAttributes> & {
     variant?: BadgeVariant
+    size?: BadgeSize
   } = $props()
 </script>
 
@@ -51,7 +54,7 @@
   bind:this={ref}
   data-slot="badge"
   {href}
-  class={cn(badgeVariants({ variant }), className)}
+  class={cn(badgeVariants({ variant, size }), className)}
   {...restProps}
 >
   {@render children?.()}

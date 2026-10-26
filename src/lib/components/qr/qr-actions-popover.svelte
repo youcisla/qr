@@ -1,97 +1,179 @@
 <script lang="ts">
-  import { Copy, Download, ExternalLink } from "@lucide/svelte"
-  import { Button } from "$lib/components/ui/button"
-  import { Popover, PopoverContent, PopoverTrigger } from "$lib/components/ui/popover"
+  import {
+    BarChart3,
+    Copy,
+    Download,
+    EllipsisVertical,
+    ExternalLink,
+    ImageDown,
+    PauseCircle,
+    Pencil,
+    PlayCircle,
+    Trash2,
+    Wand2,
+  } from "@lucide/svelte"
+  import { goto } from "$app/navigation"
+  import { buttonVariants } from "$lib/components/ui/button"
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from "$lib/components/ui/dropdown-menu"
+  import { buildQrTarget, buildShortUrl, renderQrSvg } from "$lib/qr"
+  import { downloadBlob, svgToPngBlob } from "$lib/qr/export"
+  import type { QrDesign } from "$lib/qr/types"
   import type { QrCode } from "$lib/server/db/schema/qr-codes"
-  import { generateQrCodeSvg, generateQrFilename } from "$lib/utils/qr-generator"
+  import { cn } from "$lib/utils/style"
   import { toast } from "svelte-sonner"
 
   interface Props {
     qrCode: QrCode
+    design: QrDesign
+    /** Public origin used to encode the dynamic short link. */
+    origin: string
+    onDelete?: (id: string) => void
+    onToggleStatus?: (id: string) => void
   }
 
-  let { qrCode }: Props = $props()
+  let { qrCode, design, origin, onDelete, onToggleStatus }: Props = $props()
 
-  let open = $state(false)
+  const encodeTarget = $derived(buildQrTarget(qrCode, origin))
+  const shortUrl = $derived(qrCode.shortCode ? buildShortUrl(qrCode.shortCode, origin) : null)
+  const openUrl = $derived(shortUrl ?? qrCode.destinationUrl ?? null)
 
-  async function handleDownload() {
+  function exportFilename(extension: string): string {
+    const base = (qrCode.title || qrCode.shortCode || qrCode.id)
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase()
+    return `${base || "qr-code"}.${extension}`
+  }
+
+  async function copyValue(value: string | null, message: string) {
+    if (!value) return
     try {
-      const svg = await generateQrCodeSvg({
-        url: qrCode.shortCode
-          ? `${window.location.origin}/${qrCode.shortCode}`
-          : qrCode.destinationUrl,
-        size: 500,
-      })
+      await navigator.clipboard.writeText(value)
+      toast.success(message)
+    } catch {
+      toast.error("Could not copy to the clipboard")
+    }
+  }
 
-      const blob = new Blob([svg], { type: "image/svg+xml" })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = generateQrFilename(qrCode.title || undefined, qrCode.shortCode || undefined)
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
-      toast.success("QR code downloaded")
+  function renderForExport() {
+    if (!encodeTarget) return null
+    try {
+      return renderQrSvg({ data: encodeTarget, design, size: 1024 })
     } catch (error) {
-      toast.error("Failed to download QR code")
       console.error(error)
+      toast.error("Could not render this QR code")
+      return null
     }
   }
 
-  function copyDestinationUrl() {
-    navigator.clipboard.writeText(qrCode.destinationUrl)
-    toast.success("Destination URL copied")
+  function downloadSvg() {
+    const result = renderForExport()
+    if (!result) return
+    downloadBlob(
+      new Blob([result.svg], { type: "image/svg+xml;charset=utf-8" }),
+      exportFilename("svg"),
+    )
+    toast.success("SVG downloaded")
   }
 
-  function copyShortUrl() {
-    if (qrCode.shortCode) {
-      navigator.clipboard.writeText(`${window.location.origin}/${qrCode.shortCode}`)
-      toast.success("Short URL copied")
+  async function downloadPng() {
+    const result = renderForExport()
+    if (!result) return
+    try {
+      const width = 1024
+      const height = Math.round((width * result.height) / Math.max(result.width, 1))
+      const blob = await svgToPngBlob(result.svg, { width, height })
+      downloadBlob(blob, exportFilename("png"))
+      toast.success("PNG downloaded")
+    } catch (error) {
+      console.error(error)
+      toast.error("Could not export a PNG")
     }
+  }
+
+  function openExternal(url: string | null) {
+    if (!url) return
+    window.open(url, "_blank", "noopener,noreferrer")
   }
 </script>
 
-<Popover {open} onOpenChange={(o) => (open = o)}>
-  <PopoverTrigger>
-    <Button variant="ghost" size="icon" class="h-8 w-8">
-      <ExternalLink class="h-4 w-4" />
-      <span class="sr-only">View actions</span>
-    </Button>
-  </PopoverTrigger>
-  <PopoverContent class="w-80" align="end">
-    <div class="space-y-3">
-      <div>
-        <p class="mb-1 text-sm font-medium">Destination URL</p>
-        <div class="flex items-center gap-2">
-          <p class="flex-1 truncate text-sm text-muted-foreground">{qrCode.destinationUrl}</p>
-          <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" onclick={copyDestinationUrl}>
-            <Copy class="h-4 w-4" />
-            <span class="sr-only">Copy destination URL</span>
-          </Button>
-        </div>
-      </div>
+<DropdownMenu>
+  <DropdownMenuTrigger
+    class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")}
+    aria-label={`Actions for ${qrCode.title || qrCode.shortCode || "QR code"}`}
+  >
+    <EllipsisVertical class="size-4" />
+  </DropdownMenuTrigger>
+  <DropdownMenuContent align="end" class="w-56">
+    <DropdownMenuLabel class="text-xs font-medium text-muted-foreground">Manage</DropdownMenuLabel>
+    <DropdownMenuItem onSelect={() => goto(`/dashboard/analytics/${qrCode.id}`)}>
+      <BarChart3 />
+      Analytics
+    </DropdownMenuItem>
+    <DropdownMenuItem onSelect={() => goto(`/dashboard/edit/${qrCode.id}`)}>
+      <Pencil />
+      Edit details
+    </DropdownMenuItem>
+    <DropdownMenuItem onSelect={() => goto(`/studio?edit=${qrCode.id}`)}>
+      <Wand2 />
+      Customize design
+    </DropdownMenuItem>
 
-      {#if qrCode.shortCode}
-        <div>
-          <p class="mb-1 text-sm font-medium">Short URL</p>
-          <div class="flex items-center gap-2">
-            <code class="flex-1 truncate text-sm text-muted-foreground">/{qrCode.shortCode}</code>
-            <Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" onclick={copyShortUrl}>
-              <Copy class="h-4 w-4" />
-              <span class="sr-only">Copy short URL</span>
-            </Button>
-          </div>
-        </div>
-      {/if}
+    <DropdownMenuSeparator />
 
-      <div class="border-t pt-3">
-        <Button variant="default" class="w-full gap-2" onclick={handleDownload}>
-          <Download class="h-4 w-4" />
-          Download QR Code
-        </Button>
-      </div>
-    </div>
-  </PopoverContent>
-</Popover>
+    {#if openUrl}
+      <DropdownMenuItem onSelect={() => openExternal(openUrl)}>
+        <ExternalLink />
+        {shortUrl ? "Open short link" : "Open content"}
+      </DropdownMenuItem>
+    {/if}
+    {#if shortUrl}
+      <DropdownMenuItem onSelect={() => copyValue(shortUrl, "Short link copied")}>
+        <Copy />
+        Copy short link
+      </DropdownMenuItem>
+    {/if}
+    <DropdownMenuItem onSelect={() => copyValue(encodeTarget, "QR content copied")}>
+      <Copy />
+      Copy QR content
+    </DropdownMenuItem>
+
+    <DropdownMenuSeparator />
+
+    <DropdownMenuItem onSelect={downloadSvg}>
+      <Download />
+      Download SVG
+    </DropdownMenuItem>
+    <DropdownMenuItem onSelect={downloadPng}>
+      <ImageDown />
+      Download PNG
+    </DropdownMenuItem>
+
+    <DropdownMenuSeparator />
+
+    {#if onToggleStatus}
+      <DropdownMenuItem onSelect={() => onToggleStatus?.(qrCode.id)}>
+        {#if qrCode.status === "active"}
+          <PauseCircle />
+          Pause code
+        {:else}
+          <PlayCircle />
+          Activate code
+        {/if}
+      </DropdownMenuItem>
+    {/if}
+    {#if onDelete}
+      <DropdownMenuItem variant="destructive" onSelect={() => onDelete?.(qrCode.id)}>
+        <Trash2 />
+        Delete
+      </DropdownMenuItem>
+    {/if}
+  </DropdownMenuContent>
+</DropdownMenu>

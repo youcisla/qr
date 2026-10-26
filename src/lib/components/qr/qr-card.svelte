@@ -1,201 +1,125 @@
 <script lang="ts">
-  import { Copy, Download, Edit, ExternalLink, Trash2 } from "@lucide/svelte"
+  import { BarChart3, Wand2 } from "@lucide/svelte"
+  import {
+    formatNumber,
+    formatScanMoment,
+    qrDisplaySubtitle,
+    qrDisplayTitle,
+    QrPreview,
+    statusBadgeVariant,
+    statusLabel,
+  } from "$lib/components/analytics"
   import { Badge } from "$lib/components/ui/badge"
-  import { Button, buttonVariants } from "$lib/components/ui/button"
-  import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-  } from "$lib/components/ui/card"
-  import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-  } from "$lib/components/ui/dialog"
+  import { Button } from "$lib/components/ui/button"
+  import { Card } from "$lib/components/ui/card"
+  import { Checkbox } from "$lib/components/ui/checkbox"
+  import type { QrDesign } from "$lib/qr/types"
   import type { QrCode } from "$lib/server/db/schema/qr-codes"
-  import { generateQrCodeSvg, generateQrFilename } from "$lib/utils/qr-generator"
-  import { onMount } from "svelte"
-  import { toast } from "svelte-sonner"
+  import { cn } from "$lib/utils/style"
+
+  import QrActionsPopover from "./qr-actions-popover.svelte"
 
   interface Props {
     qrCode: QrCode
-    onEdit?: (id: string) => void
+    design: QrDesign
+    /** Public origin used to render dynamic short links. */
+    origin: string
+    selected?: boolean
+    class?: string
+    onSelectChange?: (id: string, selected: boolean) => void
     onDelete?: (id: string) => void
+    onToggleStatus?: (id: string) => void
   }
 
-  let { qrCode, onEdit, onDelete }: Props = $props()
+  let {
+    qrCode,
+    design,
+    origin,
+    selected = false,
+    class: className,
+    onSelectChange,
+    onDelete,
+    onToggleStatus,
+  }: Props = $props()
 
-  let qrSvg = $state<string | null>(null)
-
-  onMount(() => {
-    return
-  })
-
-  $effect(() => {
-    generateQrCodeSvg({
-      url: qrCode.shortCode
-        ? `${window.location.origin}/${qrCode.shortCode}`
-        : qrCode.destinationUrl,
-      size: 200,
-    }).then((svg) => {
-      qrSvg = svg
-    })
-  })
-
-  function formatDate(date: Date | null): string {
-    if (!date) return "N/A"
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }).format(new Date(date))
-  }
-
-  function copyShortUrl() {
-    if (qrCode.shortCode) {
-      navigator.clipboard.writeText(`${window.location.origin}/${qrCode.shortCode}`)
-      toast.success("Short URL copied to clipboard")
-    }
-  }
-
-  async function downloadQrCode() {
-    if (!qrSvg) return
-
-    const svg = await generateQrCodeSvg({
-      url: qrCode.shortCode
-        ? `${window.location.origin}/${qrCode.shortCode}`
-        : qrCode.destinationUrl,
-      size: 500,
-    })
-
-    const blob = new Blob([svg], { type: "image/svg+xml" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = generateQrFilename(qrCode.destinationUrl, qrCode.shortCode || undefined)
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    toast.success("QR code downloaded")
-  }
-
-  function handleConfirmDelete() {
-    onDelete?.(qrCode.id)
-  }
+  const title = $derived(qrDisplayTitle(qrCode))
+  const subtitle = $derived(qrDisplaySubtitle(qrCode))
 </script>
 
-<Card>
-  <CardHeader>
-    <div class="flex items-start justify-between">
-      <div class="flex-1 space-y-1">
-        <CardTitle class="line-clamp-1">
-          {qrCode.description || qrCode.destinationUrl}
-        </CardTitle>
-        <CardDescription class="flex items-center gap-2">
-          <Badge variant={qrCode.type === "dynamic" ? "default" : "secondary"}>
-            {qrCode.type}
-          </Badge>
-          <span class="text-xs">{formatDate(qrCode.createdAt)}</span>
-        </CardDescription>
-      </div>
+<Card
+  class={cn(
+    "relative gap-0 overflow-hidden py-0 transition-shadow hover:shadow-md",
+    selected && "ring-2 ring-primary/50",
+    className,
+  )}
+>
+  <div class="flex items-center justify-between gap-2 px-3 pt-3">
+    <div class="flex min-w-0 items-center gap-2">
+      <Checkbox
+        checked={selected}
+        onCheckedChange={() => onSelectChange?.(qrCode.id, !selected)}
+        aria-label={selected ? `Deselect ${title}` : `Select ${title}`}
+      />
+      <Badge variant={qrCode.type === "dynamic" ? "default" : "secondary"}>
+        {qrCode.type}
+      </Badge>
+      <Badge variant={statusBadgeVariant(qrCode.status)}>{statusLabel(qrCode.status)}</Badge>
     </div>
-  </CardHeader>
+    <QrActionsPopover {qrCode} {design} {origin} {onDelete} {onToggleStatus} />
+  </div>
 
-  <CardContent class="space-y-4">
-    {#if qrSvg}
-      <div class="flex justify-center rounded-lg border bg-white p-4">
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        {@html qrSvg}
-      </div>
-    {:else}
-      <div class="flex h-[200px] items-center justify-center rounded-lg border bg-muted">
-        <span class="text-sm text-muted-foreground">Loading QR code...</span>
+  <div class="px-3 pt-3">
+    <div class="flex items-center justify-center rounded-lg border bg-muted/30 p-4">
+      <QrPreview qr={qrCode} {design} {origin} size={256} class="size-32 bg-white p-2 shadow-sm" />
+    </div>
+  </div>
+
+  <div class="space-y-3 p-4">
+    <div class="space-y-0.5">
+      <a
+        href={`/dashboard/analytics/${qrCode.id}`}
+        class="line-clamp-1 text-sm font-medium hover:underline"
+      >
+        {title}
+      </a>
+      <p class="line-clamp-1 text-xs text-muted-foreground">{subtitle}</p>
+    </div>
+
+    {#if qrCode.tags.length > 0}
+      <div class="flex flex-wrap items-center gap-1">
+        {#each qrCode.tags.slice(0, 3) as tag (tag)}
+          <Badge variant="outline">#{tag}</Badge>
+        {/each}
+        {#if qrCode.tags.length > 3}
+          <span class="text-xs text-muted-foreground">+{qrCode.tags.length - 3}</span>
+        {/if}
       </div>
     {/if}
 
-    <div class="space-y-2">
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-muted-foreground">Destination:</span>
-        <a
-          href={qrCode.destinationUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex items-center gap-1 text-primary hover:underline"
-        >
-          <span class="max-w-[150px] truncate">{qrCode.destinationUrl}</span>
-          <ExternalLink class="h-3 w-3" />
-        </a>
+    <dl class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+      <div>
+        <dt class="text-muted-foreground">Scans</dt>
+        <dd class="font-medium tabular-nums">{formatNumber(qrCode.scanCount)}</dd>
       </div>
-
-      {#if qrCode.shortCode}
-        <div class="flex items-center justify-between text-sm">
-          <span class="text-muted-foreground">Short URL:</span>
-          <button
-            onclick={copyShortUrl}
-            class="flex items-center gap-1 text-primary hover:underline"
-          >
-            <code class="text-xs">/{qrCode.shortCode}</code>
-            <Copy class="h-3 w-3" />
-          </button>
-        </div>
-      {/if}
-
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-muted-foreground">Scans:</span>
-        <span class="font-medium">{qrCode.scanCount}</span>
+      <div>
+        <dt class="text-muted-foreground">Unique</dt>
+        <dd class="font-medium tabular-nums">{formatNumber(qrCode.uniqueScanCount)}</dd>
       </div>
+      <div class="col-span-2">
+        <dt class="text-muted-foreground">Last scan</dt>
+        <dd class="line-clamp-1 font-medium">{formatScanMoment(qrCode.lastScannedAt)}</dd>
+      </div>
+    </dl>
 
-      {#if qrCode.lastScannedAt}
-        <div class="flex items-center justify-between text-sm">
-          <span class="text-muted-foreground">Last Scanned:</span>
-          <span class="font-medium">{formatDate(qrCode.lastScannedAt)}</span>
-        </div>
-      {/if}
-    </div>
-  </CardContent>
-
-  <CardFooter class="flex gap-2">
-    <Button variant="outline" size="sm" onclick={downloadQrCode} class="flex-1">
-      <Download class="mr-2 h-4 w-4" />
-      Download
-    </Button>
-    {#if qrCode.type === "dynamic"}
-      <Button variant="outline" size="sm" onclick={() => onEdit?.(qrCode.id)} class="flex-1">
-        <Edit class="mr-2 h-4 w-4" />
-        Edit
+    <div class="flex items-center gap-2">
+      <Button href={`/dashboard/analytics/${qrCode.id}`} variant="outline" size="sm" class="flex-1">
+        <BarChart3 class="size-4" />
+        Analytics
       </Button>
-    {/if}
-    <Dialog>
-      <DialogTrigger>
-        <Button variant="destructive" size="sm" class="flex-1">
-          <Trash2 class="mr-2 h-4 w-4" />
-          Delete
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delete QR Code</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete this QR code? This action cannot be undone.
-            {#if qrCode.type === "dynamic"}
-              The short URL will stop working.
-            {/if}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <DialogClose class={buttonVariants({ variant: "outline" })}>Cancel</DialogClose>
-          <Button variant="destructive" onclick={handleConfirmDelete}>Delete</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  </CardFooter>
+      <Button href={`/studio?edit=${qrCode.id}`} variant="ghost" size="sm" class="flex-1">
+        <Wand2 class="size-4" />
+        Customize
+      </Button>
+    </div>
+  </div>
 </Card>

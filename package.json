@@ -22,7 +22,9 @@
     "check:watch": "bun run --bun svelte-kit sync && bun run --bun svelte-check --tsconfig ./tsconfig.json --watch",
     "format:check": "bun run --bun prettier --check \"**/*.{svelte,ts,tsx,mts,js,jsx,mjs,json,md}\"",
     "format:write": "bun run --bun prettier --write \"**/*.{svelte,ts,tsx,mts,js,jsx,mjs,json,md}\"",
-    "lint": "bun run --bun eslint ."
+    "lint": "bun run --bun eslint .",
+    "test": "bun test",
+    "verify:qr": "bun run scripts/verify-qr-scan.ts"
   },
   "devDependencies": {
     "@eslint/compat": "^2.0.0",

@@ -1,220 +1,188 @@
 # Yopem QR
 
-An open-source, modern, full-featured QR code management platform built with SvelteKit. Create,
-customize, scan, and manage QR codes with an intuitive interface and powerful features. Perfect for
-developers, marketers, and anyone needing dynamic QR code solutions with analytics and
-customization.
+An open-source QR code platform with a full design studio, 16 content types, dynamic short links
+with scan analytics, and a camera scanner. Built with SvelteKit 2, Svelte 5, Tailwind CSS v4,
+Drizzle ORM and PostgreSQL.
 
 ![preview](https://raw.githubusercontent.com/yopem/qr/main/preview.png) <br />
 
+## Screenshots
+
+| QR Studio | Dashboard |
+| --- | --- |
+| ![QR Studio](docs/screenshots/studio.png) | ![Dashboard](docs/screenshots/dashboard.png) |
+
+| Analytics | Mobile studio |
+| --- | --- |
+| ![Analytics](docs/screenshots/analytics.png) | ![Mobile](docs/screenshots/studio-mobile.png) |
+
 ## Features
 
-### QR Code Generation
+### QR Studio
 
-Create static and dynamic QR codes with custom URLs and content. Generate unlimited QR codes for
-links, text, contacts, WiFi credentials, and more.
+A two-pane design studio with live, client-side preview and print-ready export.
 
-### Visual Customization
+- **10 module shapes** — square, rounded, dots, diamond, star, cross, leaf, classy, hexagon,
+  squircle.
+- **6 eye frame + 5 eye ball styles** — square, rounded, circle, leaf, octagon, squircle frames;
+  square, rounded, dots, leaf, squircle balls.
+- **Colour freedom** — solid or linear/radial gradient foregrounds, solid/gradient/transparent
+  backgrounds, optional eye colour overrides.
+- **Logo embedding** — data-URL logo, size/padding/radius controls, automatic module clearing behind
+  the logo, and an error-correction recommendation when a logo is added.
+- **8 frame styles** — borderless card, rounded, bottom banner, top banner, pill badge, ticket,
+  double border, and none — with custom captions, colours and font sizes.
+- **26 curated templates** to start from, covering classic, brand, playful, elegant, dark, gradient
+  and print categories.
+- **Scanability guardrails** — contrast checks, inverted-colour warning, quiet-zone warning, logo
+  size warnings and a print-size calculator (physical cm + DPI to required pixels).
+- **Exports** — SVG (vector), PNG (any size, transparent option), JPEG, PDF, WebP, plus "copy SVG"
+  for design tools.
 
-Personalize QR codes with custom colors, patterns, corner styles, and designs. Make your QR codes
-match your brand identity with powerful customization options.
+### 16 content types
 
-### QR Code Scanning
+Links, plain text, email, phone, SMS, WhatsApp, WiFi, vCard, MeCard, location (geo), calendar
+events, crypto payments, SEPA payments (EPC069-12), app store links, social profiles and PayPal.
+Each type has a dedicated form, validation, and a payload parser used by the scanner.
 
-Scan QR codes via camera or upload images for instant decoding. Built-in scanner works seamlessly on
-desktop and mobile devices.
+### Dynamic QR codes
 
-### User Authentication
+Turn any URL-like content type into a dynamic short link:
 
-Secure login with OpenAuth for personalized QR code management. Each user has their own private
-collection of QR codes.
+- Edit the destination after printing.
+- Pause, archive, or set an expiry date.
+- Password-protect a code with a signed 30-minute unlock cookie.
+- Organise codes with tags, search and filters.
+- Duplicate, bulk archive/pause/activate/delete and export to CSV.
+- Every dynamic code gets a short link (`/{shortCode}`) that records the scan before redirecting.
 
-### Dashboard Management
+### Scan analytics
 
-View, edit, delete, and organize your QR codes in one place. Powerful dashboard with filtering,
-sorting, and search capabilities.
+A dedicated analytics page per QR code with a 7/30/90-day/all range selector:
 
-### Bulk Operations
+- Total scans, unique scans, last scan, range totals.
+- Scans over time (area chart with unique overlay).
+- Device type, operating system and browser breakdowns.
+- Countries, cities, referrers and an hour-of-day heatmap.
+- CSV export built from the same data.
+- Privacy-first: raw IPs are never stored — only salted hashes, with a 24-hour uniqueness window.
 
-Select and manage multiple QR codes at once. Perform actions like delete, export, or update on
-multiple QR codes simultaneously.
+### Scanner
 
-### Short Links
+- Live camera scanning via `getUserMedia` with torch/multi-camera controls when supported.
+- Upload, drag & drop, or paste a screenshot.
+- `BarcodeDetector` fast path with a `jsQR` fallback.
+- Structured result cards for WiFi, vCards, MeCards, email, SMS, geo, events and URLs.
+- On-device scan history; no images leave the browser.
 
-Automatic short URL generation for dynamic QR codes. Track clicks and analytics for your dynamic QR
-codes.
+### REST API
 
-### Responsive Design
+Programmatic access is available for teams that generate codes in bulk:
 
-Seamless experience across desktop and mobile devices. Fully responsive interface optimized for all
-screen sizes.
+- `POST /api/keys` creates an API key (the secret is shown once); `GET /api/keys` lists prefixes, `DELETE /api/keys/[id]` revokes.
+- `POST /api/v1/qr` (bearer key) creates a static or dynamic QR code with a full design object; `GET /api/v1/qr` lists with `status`/`type`/`search`/`limit`/`offset`.
+- Session-authenticated app APIs: `PATCH/DELETE /api/qr/[id]`, `POST /api/qr/bulk` (activate/pause/archive/duplicate/delete), `GET /api/qr/export?format=csv`.
 
-## Tech Stack
+### Architecture
+
+```
+src/
+  lib/qr/                 # Isomorphic QR engine (no DOM / Node APIs)
+    matrix.ts             # Payload -> module matrix (error correction + masking via qrcode)
+    geometry.ts           # Dot, eye and frame path geometry (SVG / PDF ready)
+    render.ts             # renderQrSvg(): full design -> standalone SVG
+    scanability.ts        # Contrast, logo and density heuristics
+    export.ts             # SVG -> PNG/JPEG/WebP/PDF (browser)
+    content/              # 16 content codecs + registry + tests
+    templates.ts          # Curated design presets
+  lib/components/studio/  # Studio UI (type picker, design controls, export panel)
+  lib/components/analytics/ # Dependency-free SVG charts
+  lib/server/             # Drizzle schema, QR service, analytics, auth issuer
+  routes/                 # /studio, /dashboard, /dashboard/analytics/[id], API routes
+```
+
+The engine is dependency-light: `qrcode` provides Reed–Solomon encoding and mask selection, while
+all styling, geometry, export and validation live in this repository. It runs in the browser (live
+preview) and on the server (SSR showcase and OG images) from the same code.
+
+### Tech stack
 
 - **Runtime**: Bun
 - **Framework**: SvelteKit 2 with Svelte 5 (runes)
 - **Language**: TypeScript
-- **UI**: Tailwind CSS
+- **UI**: Tailwind CSS v4, shadcn-svelte/bits-ui primitives, Lucide icons
 - **Database**: PostgreSQL with Drizzle ORM
-- **Build Tool**: Vite
-- **Authentication**: OpenAuth
+- **Auth**: OpenAuth (self-hosted issuer included)
+- **QR**: `qrcode` encoder, `jsqr` fallback decoder
 
 ## Prerequisites
-
-### For Local Development
 
 - [Bun](https://bun.sh) 1.3 or higher
 - PostgreSQL database
 - Git
-- **OpenAuth Issuer** - Required for authentication
-  ([setup guide](https://openauth.js.org/docs/issuer/))
 
 ## Installation
 
-### Local Development Setup
+```bash
+git clone https://github.com/yopem/qr.git
+cd qr
+bun install
+cp .env.example .env
+# edit .env (see Environment Variables)
+bun run db:generate
+bun run db:migrate
+bun run dev
+```
 
-1. **Clone the repository**
+Open http://localhost:5173.
 
-   ```bash
-   git clone https://github.com/yopem/qr.git
-   cd qr
-   ```
+### Environment variables
 
-2. **Install dependencies**
+| Variable                                                           | Required    | Description                                                    |
+| ------------------------------------------------------------------ | ----------- | -------------------------------------------------------------- |
+| `DATABASE_URL`                                                     | yes         | PostgreSQL connection string (Supabase pooled URLs supported). |
+| `AUTH_ISSUER`                                                      | no          | OpenAuth issuer URL. Defaults to the self-hosted issuer.       |
+| `SCAN_SALT`                                                        | recommended | Salt for hashed IP/visitor analytics identifiers.              |
+| `UNLOCK_SECRET`                                                    | recommended | HMAC secret for password-protected QR unlock cookies.          |
+| `PUBLIC_SITE_TITLE`, `PUBLIC_SITE_DESCRIPTION`, `PUBLIC_SITE_NAME` | no          | SEO/site metadata.                                             |
 
-   ```bash
-   bun install
-   ```
+## Scripts
 
-3. **Set up environment variables**
+| Script                                       | Description                                                         |
+| -------------------------------------------- | ------------------------------------------------------------------- |
+| `bun run dev`                                | Start the Vite dev server.                                          |
+| `bun run build`                              | Production build (Node adapter by default, Vercel when `VERCEL=1`). |
+| `bun run preview`                            | Preview the production build on port 3002.                          |
+| `bun run check`                              | Type-check with svelte-check.                                       |
+| `bun test`                                   | Run unit tests (engine, content codecs, payload parser).            |
+| `bun run verify:qr`                          | Render every style in headless Chrome and decode the screenshots.   |
+| `bun run lint` / `bun run format:check`      | ESLint / Prettier checks.                                           |
+| `bun run db:generate` / `bun run db:migrate` | Drizzle migrations.                                                 |
 
-   Copy the example environment file and configure it:
+## Verification
 
-   ```bash
-   cp .env.example .env
-   ```
+Two layers keep the QR engine honest:
 
-   Edit `.env` and configure the required variables (see
-   [Environment Variables](#environment-variables) section below).
+1. `bun test` — unit tests for encoding, geometry, design warnings, content codecs and payload
+   parsing.
+2. `bun run verify:qr` — renders a matrix of designs (every dot/eye/frame style, gradients, logos,
+   error-correction levels), screenshots each one in headless Chrome, decodes it with `jsqr`, and
+   fails if any code no longer reads back correctly. See
+   [docs/verification.md](docs/verification.md).
 
-4. **Run database migrations**
+Competitive research that informed the design system and feature set lives in
+[docs/research](docs/research/).
 
-   ```bash
-   bun run db:generate && bun run db:migrate
-
-   ```
-
-5. **Start the development server**
-
-   ```bash
-   bun run dev
-   ```
-
-6. **Access the application**
-
-   Open your browser and navigate to [http://localhost:5173](http://localhost:5173)
-
-## Environment Variables
-
-### Required Variables
-
-| Variable       | Description                                                       | Example                                              |
-| -------------- | ----------------------------------------------------------------- | ---------------------------------------------------- |
-| `DATABASE_URL` | PostgreSQL connection string                                      | `postgresql://user:password@localhost:5432/yopem_qr` |
-| `AUTH_ISSUER`  | OpenAuth issuer URL (see [OpenAuth Setup](#openauth-setup) below) | `https://auth.example.com`                           |
-
-### OpenAuth Setup
-
-Yopem QR uses [OpenAuth](https://openauth.js.org/) for authentication. You need to set up an
-OpenAuth issuer to handle user authentication.
-
-#### Setting Up Your Issuer
-
-1. **Follow the official guide**: Visit
-   [OpenAuth Issuer Documentation](https://openauth.js.org/docs/issuer/) for detailed setup
-   instructions
-
-2. **Deploy your issuer**: You can deploy an OpenAuth issuer using:
-   - Your own server
-   - Serverless platforms (AWS Lambda, Cloudflare Workers, etc.)
-   - Container platforms (Docker, Kubernetes)
-
-3. **Configure the `AUTH_ISSUER` variable**: Once your issuer is running, set the `AUTH_ISSUER`
-   environment variable to your issuer's URL:
-
-   ```bash
-   AUTH_ISSUER=https://your-issuer-domain.com
-   ```
-
-4. **Important**: Without a properly configured OpenAuth issuer, the application will not be able to
-   authenticate users and login functionality will not work.
-
-#### Quick Start for Development
-
-For local development, you can run an OpenAuth issuer locally. Refer to the
-[OpenAuth documentation](https://openauth.js.org/docs/issuer/) for local setup instructions.
-
-For a complete list of environment variables, see [.env.example](.env.example).
-
-## Usage
-
-1. **Access the application** at `http://localhost:5173`
-
-2. **Create an account or log in** using the authentication system
-
-3. **Create your first QR code**:
-   - Click the "Generate QR Code" button
-   - Enter your URL or content
-   - Customize colors, patterns, and corner styles
-   - Download or save your QR code
-
-4. **Scan QR codes**:
-   - Navigate to the scanner page
-   - Allow camera access or upload an image
-   - View decoded content instantly
-
-5. **Manage your QR codes**:
-   - View all your QR codes in the dashboard
-   - Edit, delete, or duplicate QR codes
-   - Use bulk operations to manage multiple codes at once
-
-6. **Track analytics** for your dynamic QR codes and monitor usage
-
-## Available Commands
-
-| Command                | Description                         |
-| ---------------------- | ----------------------------------- |
-| `bun dev`              | Start development server            |
-| `bun run build`        | Build for production                |
-| `bun run preview`      | Preview production build            |
-| `bun run check`        | Run type checking with svelte-check |
-| `bun run lint`         | Run ESLint                          |
-| `bun run format:check` | Check code formatting with Prettier |
-| `bun run format:write` | Format code with Prettier           |
-| `bun run db:studio`    | Open Drizzle Studio (database GUI)  |
-| `bun run db:push`      | Push schema changes to database     |
-| `bun run db:generate`  | Generate new migration              |
-| `bun run db:migrate`   | Run databse migrations              |
-| `bun run db:pull`      | Pull schema from database           |
-
-## Development
-
-### Code Quality
-
-This project uses automated code quality tools. Before committing changes, ensure:
+## Deployment
 
 ```bash
-# Run linter
-bun run lint
-
-# Run type checking
-bun run check
-
-# Check formatting
-bun run format:check
+VERCEL=1 bun run build   # Vercel adapter
+bun run build            # Node adapter (@sveltejs/adapter-node)
 ```
+
+Run `bun run db:migrate` against the production database once. Set `SCAN_SALT` and `UNLOCK_SECRET`
+in the hosting environment so analytics hashes and unlock cookies are stable across deploys.
 
 ## License
 
-This project is licensed under the [AGPL-3.0-or-later](LICENSE.md) license. This is a copyleft
-license that requires any derivative works to be distributed under the same license terms.
+AGPL-3.0-or-later — see [LICENSE.md](LICENSE.md).
